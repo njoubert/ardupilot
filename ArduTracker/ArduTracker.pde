@@ -62,6 +62,30 @@
 #include "Parameters.h"
 
 
+//Documentation of GLobals:
+static union {
+    struct {
+        uint8_t home_is_set         : 1; // 0
+        uint8_t simple_mode         : 2; // 1,2 // This is the state of simple mode : 0 = disabled ; 1 = SIMPLE ; 2 = SUPERSIMPLE
+        uint8_t pre_arm_rc_check    : 1; // 3   // true if rc input pre-arm checks have been completed successfully
+        uint8_t pre_arm_check       : 1; // 4   // true if all pre-arm checks (rc, accel calibration, gps lock) have been performed
+        uint8_t auto_armed          : 1; // 5   // stops auto missions from beginning until throttle is raised
+        uint8_t logging_started     : 1; // 6   // true if dataflash logging has started
+        uint8_t land_complete       : 1; // 7   // true if we have detected a landing
+        uint8_t new_radio_frame     : 1; // 8       // Set true if we have new PWM data to act on from the Radio
+        uint8_t CH7_flag            : 2; // 9,10   // ch7 aux switch : 0 is low or false, 1 is center or true, 2 is high
+        uint8_t CH8_flag            : 2; // 11,12   // ch8 aux switch : 0 is low or false, 1 is center or true, 2 is high
+        uint8_t usb_connected       : 1; // 13      // true if APM is powered from USB connection
+        uint8_t rc_receiver_present : 1; // 14  // true if we have an rc receiver present (i.e. if we've ever received an update
+        uint8_t compass_mot         : 1; // 15  // true if we are currently performing compassmot calibration
+    };
+    uint16_t value;
+} ap;
+
+// board specific config
+static AP_BoardConfig BoardConfig;
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // AP_HAL instance
 ////////////////////////////////////////////////////////////////////////////////
@@ -424,51 +448,12 @@ static const AP_Scheduler::Task scheduler_tasks[] PROGMEM = {
 void setup() 
 {
 
-    // Load the default values of variables listed in var_info[]s
-    //AP_Param::setup_sketch_defaults();
-
     cliSerial = hal.console;
 
+    // Load the default values of variables listed in var_info[]s
+    AP_Param::setup_sketch_defaults();
 
-    if (!hal.gpio->usb_connected()) {
-        // USB is not connected, this means UART0 may be a Xbee, with
-        // its darned bricking problem. We can't write to it for at
-        // least one second after powering up. Simplest solution for
-        // now is to delay for 1 second. Something more elegant may be
-        // added later
-        delay(1000);
-    }
-
-    // Console serial port
-    //
-    // The console port buffers are defined to be sufficiently large to support
-    // the MAVLink protocol efficiently
-    //
-#if HIL_MODE != HIL_MODE_DISABLED
-    // we need more memory for HIL, as we get a much higher packet rate
-    hal.uartA->begin(SERIAL0_BAUD, 256, 256);
-#else
-    // use a bit less for non-HIL operation
-    hal.uartA->begin(SERIAL0_BAUD, 512, 128);
-#endif
-
-    // GPS serial port.
-    //
-#if GPS_PROTOCOL != GPS_PROTOCOL_IMU
-    // standard gps running. Note that we need a 256 byte buffer for some
-    // GPS types (eg. UBLOX)
-    hal.uartB->begin(38400, 256, 16);
-#endif
-
-#if GPS2_ENABLE
-    if (hal.uartE != NULL) {
-        hal.uartE->begin(38400, 256, 16);
-    }
-#endif
-
-    cliSerial->printf_P(PSTR("\n\nInit " FIRMWARE_STRING
-                         "\n\nFree RAM: %u\n"),
-                        hal.util->available_memory());
+    init_ardupilot();
 
     //initialise the main loop scheduler
     scheduler.init(&scheduler_tasks[0], sizeof(scheduler_tasks)/sizeof(scheduler_tasks[0]));
@@ -488,9 +473,6 @@ void loop()
     // // check loop time
     // perf_info_check_loop_time(timer - fast_loopTimer);
 
-    // // used by PI Loops
-    // G_Dt                    = (float)(timer - fast_loopTimer) / 1000000.f;
-    // fast_loopTimer          = timer;
 
     // // for mainloop failure monitoring
     mainLoop_count++;
