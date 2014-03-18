@@ -479,7 +479,7 @@ void loop()
 
     // // Execute the fast loop
     // // ---------------------
-    // fast_loop();
+    fast_loop();
 
     // // tell the scheduler one tick has passed
     scheduler.tick();
@@ -495,11 +495,30 @@ void loop()
 }
 
 
+// Main loop - 100hz
+static void fast_loop()
+{
+
+    // IMU DCM Algorithm
+    // --------------------
+    ahrs.update();
+
+    // Inertial Nav
+    // --------------------
+    inertial_nav.update(G_Dt);
+
+}
+
+
 // one_hz_loop - runs at 1Hz
 static void one_hz_loop()
 {
 
-    cliSerial->printf_P(PSTR("Hello World!\n"));
+  float roll = ahrs.roll;
+  float pitch = ahrs.pitch;
+  float yaw = ahrs.yaw;
+
+    cliSerial->printf_P(PSTR("Hello World! Roll: %f, Pitch: %f, Yaw: %f\n"), roll, pitch, yaw);
 
 }
 
