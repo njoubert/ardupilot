@@ -233,6 +233,17 @@ AP_AHRS_DCM ahrs(ins, barometer, g_gps);
 
 
 ////////////////////////////////////////////////////////////////////////////////
+// cliSerial
+////////////////////////////////////////////////////////////////////////////////
+// cliSerial isn't strictly necessary - it is an alias for hal.console. It may
+// be deprecated in favor of hal.console in later releases.
+static AP_HAL::BetterStream* cliSerial;
+
+// N.B. we need to keep a static declaration which isn't guarded by macros
+// at the top to cooperate with the prototype mangler.
+
+
+////////////////////////////////////////////////////////////////////////////////
 // GCS selection
 ////////////////////////////////////////////////////////////////////////////////
 static const uint8_t num_gcs = MAVLINK_COMM_NUM_BUFFERS;
@@ -365,7 +376,7 @@ static const AP_Scheduler::Task scheduler_tasks[] PROGMEM = {
 //     { compass_accumulate,    8,     42 },
 //     { barometer_accumulate,  8,     25 },
 //     { update_notify,         8,     10 },
-//     { one_hz_loop,         400,     42 },
+       { one_hz_loop,         400,     42 },
 //     { gcs_check_input,	     8,    550 },
 //     { gcs_send_heartbeat,  400,    150 },
 //     { gcs_send_deferred,     8,    720 },
@@ -396,7 +407,7 @@ static const AP_Scheduler::Task scheduler_tasks[] PROGMEM = {
     // { compass_accumulate,    2,     420 },
     // { barometer_accumulate,  2,     250 },
     // { update_notify,         2,     100 },
-    // { one_hz_loop,         100,     420 },
+       { one_hz_loop,         100,     420 },
     // { gcs_check_input,	     2,     550 },
     // { gcs_send_heartbeat,  100,     150 },
     // { gcs_send_deferred,     2,     720 },
@@ -416,10 +427,51 @@ void setup()
     // Load the default values of variables listed in var_info[]s
     //AP_Param::setup_sketch_defaults();
 
-    //init_ardupilot();
+    cliSerial = hal.console;
 
-    // initialise the main loop scheduler
-    //scheduler.init(&scheduler_tasks[0], sizeof(scheduler_tasks)/sizeof(scheduler_tasks[0]));
+
+    if (!hal.gpio->usb_connected()) {
+        // USB is not connected, this means UART0 may be a Xbee, with
+        // its darned bricking problem. We can't write to it for at
+        // least one second after powering up. Simplest solution for
+        // now is to delay for 1 second. Something more elegant may be
+        // added later
+        delay(1000);
+    }
+
+    // Console serial port
+    //
+    // The console port buffers are defined to be sufficiently large to support
+    // the MAVLink protocol efficiently
+    //
+#if HIL_MODE != HIL_MODE_DISABLED
+    // we need more memory for HIL, as we get a much higher packet rate
+    hal.uartA->begin(SERIAL0_BAUD, 256, 256);
+#else
+    // use a bit less for non-HIL operation
+    hal.uartA->begin(SERIAL0_BAUD, 512, 128);
+#endif
+
+    // GPS serial port.
+    //
+#if GPS_PROTOCOL != GPS_PROTOCOL_IMU
+    // standard gps running. Note that we need a 256 byte buffer for some
+    // GPS types (eg. UBLOX)
+    hal.uartB->begin(38400, 256, 16);
+#endif
+
+#if GPS2_ENABLE
+    if (hal.uartE != NULL) {
+        hal.uartE->begin(38400, 256, 16);
+    }
+#endif
+
+    cliSerial->printf_P(PSTR("\n\nInit " FIRMWARE_STRING
+                         "\n\nFree RAM: %u\n"),
+                        hal.util->available_memory());
+
+    //initialise the main loop scheduler
+    scheduler.init(&scheduler_tasks[0], sizeof(scheduler_tasks)/sizeof(scheduler_tasks[0]));
 }
 
 
@@ -431,7 +483,7 @@ void loop()
     //     Log_Write_Error(ERROR_SUBSYSTEM_MAIN, ERROR_CODE_MAIN_INS_DELAY);
     //     return;
     // }
-    // uint32_t timer = micros();
+    uint32_t timer = micros();
 
     // // check loop time
     // perf_info_check_loop_time(timer - fast_loopTimer);
@@ -441,22 +493,31 @@ void loop()
     // fast_loopTimer          = timer;
 
     // // for mainloop failure monitoring
-    // mainLoop_count++;
+    mainLoop_count++;
 
     // // Execute the fast loop
     // // ---------------------
     // fast_loop();
 
     // // tell the scheduler one tick has passed
-    // scheduler.tick();
+    scheduler.tick();
 
     // // run all the tasks that are due to run. Note that we only
     // // have to call this once per loop, as the tasks are scheduled
     // // in multiples of the main loop tick. So if they don't run on
     // // the first call to the scheduler they won't run on a later
     // // call until scheduler.tick() is called again
-    // uint32_t time_available = (timer + MAIN_LOOP_MICROS) - micros();
-    // scheduler.run(time_available);
+    uint32_t time_available = (timer + MAIN_LOOP_MICROS) - micros();
+    scheduler.run(time_available);
+
+}
+
+
+// one_hz_loop - runs at 1Hz
+static void one_hz_loop()
+{
+
+    cliSerial->printf_P(PSTR("Hello World!\n"));
 
 }
 
